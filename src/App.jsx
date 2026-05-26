@@ -66,6 +66,70 @@ export default function App() {
   const getNightCount=d=> employees.filter(e=> getStatus(e.id,d)==='야간').length;
   const isUnderMin=d=>{ const ds=dStr(year,month,d); if(HOLIDAYS[ds]) return false; const dw=getDow(year,month,d); return getWorkCount(d)<(minStaff[dw]??0); };
   const isUnderNight=d=>{ const ds=dStr(year,month,d); if(HOLIDAYS[ds]) return false; const dw=getDow(year,month,d); if(dw!==2&&dw!==4) return false; return getNightCount(d)<minNight; };
+  // ── PDF / 인쇄 출력 ──────────────────────────────────────
+  const exportPDF = () => {
+    if(!employees.length){ showToast('직원을 먼저 등록해주세요','error'); return; }
+    const firstDow = getDow(year,month,1);
+    const calRows = Math.ceil((firstDow + dims)/7);
+    let calGridHTML = '';
+    for(let row=0;row<calRows;row++){
+      calGridHTML += '<tr>';
+      for(let col=0;col<7;col++){
+        const cellIdx = row*7+col;
+        const d = cellIdx - firstDow + 1;
+        const dw = col;
+        if(d<1||d>dims){ calGridHTML += '<td style="background:#fafafa;border:1px solid #E2E8F0;"></td>'; continue; }
+        const ds = dStr(year,month,d);
+        const isHol = !!HOLIDAYS[ds];
+        const holName = HOLIDAYS[ds]||'';
+        const isWeekend = dw===0||dw===6;
+        const isNightDay = dw===2||dw===4;
+        const groups = {근무:[],야간:[],연차:[],반차:[],오프:[]};
+        employees.forEach(e=>{
+          const s = isHol ? null : getStatus(e.id,d);
+          if(s && groups[s]) groups[s].push(e.name);
+        });
+        const under = !isHol && (isUnderMin(d)||isUnderNight(d));
+        const cellBg = isHol?'#FFF0F0': under?'#FFF5F5': dw===0?'#FFFBEB': dw===6?'#F5F3FF': isNightDay?'#F0F0FF':'#fff';
+        const dateBg = isHol?'#EF4444': dw===0?'#F59E0B': dw===6?'#8B5CF6':'transparent';
+        const dateColor = (isHol||dw===0||dw===6)?'#fff': isNightDay?'#4338CA':'#0F172A';
+        const wkCnt = isHol ? 0 : getWorkCount(d);
+        const reqCnt = minStaff[dw]??0;
+        let chipsHTML = '';
+        if(isHol){
+          chipsHTML = `<div style="font-size:7px;color:#DC2626;font-weight:600;margin-top:2px;">🎌 ${holName}</div>`;
+        } else {
+          groups['근무'].forEach(n=>{ chipsHTML += `<div style="background:#D1FAE5;color:#065F46;border-radius:3px;padding:1px 3px;font-size:6.5px;font-weight:600;margin:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">● ${n}</div>`; });
+          groups['야간'].forEach(n=>{ chipsHTML += `<div style="background:#312E81;color:#C4B5FD;border-radius:3px;padding:1px 3px;font-size:6.5px;font-weight:600;margin:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">🌙 ${n}</div>`; });
+          groups['연차'].forEach(n=>{ chipsHTML += `<div style="background:#FEF3C7;color:#92400E;border-radius:3px;padding:1px 3px;font-size:6.5px;font-weight:600;margin:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">연차 ${n}</div>`; });
+          groups['반차'].forEach(n=>{ chipsHTML += `<div style="background:#EDE9FE;color:#5B21B6;border-radius:3px;padding:1px 3px;font-size:6.5px;font-weight:600;margin:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">반차 ${n}</div>`; });
+          if(groups['오프'].length){ chipsHTML += `<div style="background:#EFF6FF;color:#1E40AF;border-radius:3px;padding:1px 3px;font-size:6px;margin-top:2px;border-top:1px dashed #BFDBFE;">오프: ${groups['오프'].join(', ')}</div>`; }
+        }
+        calGridHTML += `<td style="vertical-align:top;padding:0;border:1px solid #E2E8F0;background:${cellBg};width:${100/7}%;"><div style="padding:2px 3px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;"><div style="width:17px;height:17px;border-radius:50%;background:${dateBg};display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;color:${dateColor};">${d}</div><div style="font-size:6px;color:${under?'#DC2626':'#94A3B8'};font-weight:600;">${isHol?'공휴일':`${wkCnt}/${reqCnt}명`}</div></div>${chipsHTML}</div></td>`;
+      }
+      calGridHTML += '</tr>';
+    }
+    let summaryRows = '';
+    employees.forEach(e=>{
+      let work=0,night=0,off=0,annual=0,half=0,sunWork=0;
+      allDays.forEach(d=>{
+        const s=getStatus(e.id,d); const dw=getDow(year,month,d);
+        if(s==='근무'){work++;if(dw===0)sunWork++;}
+        else if(s==='야간') night++;
+        else if(s==='오프') off++;
+        else if(s==='연차') annual++;
+        else if(s==='반차') half++;
+      });
+      summaryRows += `<tr><td style="padding:3px 6px;font-weight:600;font-size:8px;color:#0F172A;white-space:nowrap;">${e.name}</td><td style="padding:3px 6px;font-size:8px;color:#94A3B8;">${e.role}</td><td style="padding:3px 6px;text-align:center;font-size:8px;background:#D1FAE5;color:#065F46;font-weight:700;">${work}</td><td style="padding:3px 6px;text-align:center;font-size:8px;background:#312E81;color:#C4B5FD;font-weight:700;">${night}</td><td style="padding:3px 6px;text-align:center;font-size:8px;background:#DBEAFE;color:#1E40AF;font-weight:700;">${off}</td><td style="padding:3px 6px;text-align:center;font-size:8px;background:#FEF3C7;color:#92400E;font-weight:700;">${annual}</td><td style="padding:3px 6px;text-align:center;font-size:8px;background:#EDE9FE;color:#5B21B6;font-weight:700;">${half}</td><td style="padding:3px 6px;text-align:center;font-size:8px;background:#FEF3C7;color:#D97706;font-weight:700;">${sunWork}</td><td style="padding:3px 6px;text-align:center;font-size:8px;font-weight:800;color:#0EA5E9;">${work+night}</td></tr>`;
+    });
+    const holList = Object.entries(HOLIDAYS).filter(([k])=>k.startsWith(`${year}-${String(month).padStart(2,'0')}`)).map(([,v])=>v).filter((v,i,a)=>a.indexOf(v)===i).join(' · ');
+    const html = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"/><title>${year}년 ${month}월 근무표</title><style>@page{size:A4 landscape;margin:8mm;}*{box-sizing:border-box;margin:0;padding:0;font-family:'Malgun Gothic','나눔고딕',sans-serif;}body{background:#fff;}table{border-collapse:collapse;width:100%;}td,th{border:1px solid #E2E8F0;}@media print{.print-btn{display:none!important;}body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}</style></head><body><div class="print-btn" style="position:fixed;top:10px;right:10px;z-index:99;display:flex;gap:8px;"><button onclick="window.print()" style="background:#0EA5E9;color:#fff;border:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">🖨️ PDF / 인쇄</button><button onclick="window.close()" style="background:#F1F5F9;color:#374151;border:1px solid #E2E8F0;padding:10px 16px;border-radius:8px;font-size:14px;cursor:pointer;">✕ 닫기</button></div><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;padding-bottom:5px;border-bottom:2px solid #0EA5E9;"><div><div style="font-size:16px;font-weight:800;color:#0EA5E9;">🦷 맑은플란트치과의원</div><div style="font-size:11px;color:#64748B;margin-top:1px;">${year}년 ${month}월 근무표${holList ? ' | 🎌 공휴일: '+holList : ''}</div></div><div style="font-size:9px;color:#94A3B8;">출력일: ${new Date().toLocaleDateString('ko-KR')} | 총 ${employees.length}명</div></div><table style="margin-bottom:6px;table-layout:fixed;"><thead><tr style="background:#F8FAFC;">${['일','월','화 🌙','수','목 🌙','금','토'].map((d,i)=>`<th style="padding:4px;text-align:center;font-size:9px;font-weight:700;color:${i===0?'#DC2626':i===6?'#7C3AED':i===2||i===4?'#4338CA':'#374151'};background:${i===0?'#FFFBEB':i===6?'#F5F3FF':i===2||i===4?'#F0F0FF':'#F8FAFC'};width:${100/7}%;">${d}</th>`).join('')}</tr></thead><tbody style="vertical-align:top;">${calGridHTML}</tbody></table><div style="display:flex;gap:8px;margin-bottom:5px;flex-wrap:wrap;align-items:center;"><span style="font-size:7.5px;color:#64748B;font-weight:600;">범례:</span>${[['#D1FAE5','#065F46','근무'],['#312E81','#C4B5FD','🌙야간'],['#DBEAFE','#1E40AF','오프'],['#FEF3C7','#92400E','연차'],['#EDE9FE','#5B21B6','반차'],['#FEE2E2','#991B1B','🎌공휴일'],['#FFF5F5','#DC2626','⚠️인원부족']].map(([bg,c,l])=>`<div style="display:flex;align-items:center;gap:3px;"><div style="width:12px;height:10px;background:${bg};border-radius:2px;border:1px solid ${c}33;"></div><span style="font-size:7.5px;color:#374151;">${l}</span></div>`).join('')}</div><div style="font-size:9px;font-weight:700;color:#0F172A;margin-bottom:3px;">📊 직원별 근무 요약</div><table style="table-layout:auto;"><thead><tr style="background:#F8FAFC;"><th style="padding:3px 6px;text-align:left;font-size:8px;font-weight:700;">이름</th><th style="padding:3px 6px;text-align:left;font-size:8px;font-weight:700;">직책</th><th style="padding:3px 6px;text-align:center;font-size:8px;background:#D1FAE5;color:#065F46;font-weight:700;">근무</th><th style="padding:3px 6px;text-align:center;font-size:8px;background:#312E81;color:#C4B5FD;font-weight:700;">야간</th><th style="padding:3px 6px;text-align:center;font-size:8px;background:#DBEAFE;color:#1E40AF;font-weight:700;">오프</th><th style="padding:3px 6px;text-align:center;font-size:8px;background:#FEF3C7;color:#92400E;font-weight:700;">연차</th><th style="padding:3px 6px;text-align:center;font-size:8px;background:#EDE9FE;color:#5B21B6;font-weight:700;">반차</th><th style="padding:3px 6px;text-align:center;font-size:8px;background:#FEF3C7;color:#D97706;font-weight:700;">일요일</th><th style="padding:3px 6px;text-align:center;font-size:8px;color:#0EA5E9;font-weight:700;">총근무</th></tr></thead><tbody>${summaryRows}</tbody></table></body></html>`;
+    const win = window.open('','_blank','width=1200,height=850');
+    if(!win){ showToast('팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요','error'); return; }
+    win.document.write(html);
+    win.document.close();
+    setTimeout(()=>{ try{ win.focus(); win.print(); }catch(_){} }, 800);
+  };
   const addEmployee=()=>{
     if(!newEmp.name.trim()){ showToast('이름을 입력해주세요','error'); return; }
     const emp={id:Date.now().toString(),name:newEmp.name.trim(),role:newEmp.role,
@@ -282,9 +346,10 @@ export default function App() {
                 <span style={{fontWeight:'800',fontSize:'20px',color:'#0F172A',minWidth:'130px',textAlign:'center'}}>{year}년 {month}월</span>
                 <button onClick={nextMonth} style={{...S.btn('secondary'),padding:'7px 12px',fontSize:'16px'}}>▶</button>
               </div>
-              {/* Filter chips */}
+              {/* Filter chips + PDF button */}
               <div style={{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center'}}>
-                <span style={{fontSize:'11px',color:'#94A3B8',marginRight:'2px'}}>필터:</span>
+                <button onClick={exportPDF} style={{...S.btn('primary'),padding:'7px 14px'}}>🖨️ PDF 출력</button>
+                <span style={{fontSize:'11px',color:'#94A3B8',marginLeft:'4px',marginRight:'2px'}}>필터:</span>
                 {[['all','전체','#F1F5F9','#374151'],['근무','✅ 근무','#DCFCE7','#166534'],
                   ['야간','🌙 야간','#EEF2FF','#4338CA'],['연차','📅 연차','#FEF3C7','#92400E'],
                   ['오프','☁️ 오프','#DBEAFE','#1E40AF']].map(([v,l,bg,c])=>(
@@ -368,7 +433,10 @@ export default function App() {
                 <span style={{fontWeight:'800',fontSize:'17px',color:'#0F172A',minWidth:'110px',textAlign:'center'}}>{year}년 {month}월</span>
                 <button onClick={nextMonth} style={{...S.btn('secondary'),padding:'6px 10px'}}>▶</button>
               </div>
-              <div style={{fontSize:'11px',color:'#94A3B8'}}>셀 클릭으로 상태 변경 | 공휴일은 변경 불가</div>
+              <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+                <button onClick={exportPDF} style={{...S.btn('primary'),padding:'7px 14px'}}>🖨️ PDF 출력</button>
+                <span style={{fontSize:'11px',color:'#94A3B8'}}>셀 클릭으로 상태 변경 | 공휴일은 변경 불가</span>
+              </div>
             </div>
             <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'10px',flexWrap:'wrap'}}>
               {Object.entries(STATUS_META).map(([k,v])=>(
